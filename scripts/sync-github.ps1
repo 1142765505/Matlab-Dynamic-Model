@@ -7,8 +7,17 @@ $env:GCM_INTERACTIVE = 'Never'
 
 function Invoke-Git {
     param([string[]]$GitArgs)
-    $result = & git -C $repoPath @GitArgs 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ($result -join "`n") }
+    $previousPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell treats native stderr as ErrorRecord objects,
+        # even when Git succeeds (for example, fetch progress).
+        $ErrorActionPreference = 'Continue'
+        $result = & git -C $repoPath @GitArgs 2>&1
+        $gitExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($gitExitCode -ne 0) { throw ($result -join "`n") }
     return $result
 }
 
