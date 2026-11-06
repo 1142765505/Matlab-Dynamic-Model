@@ -18,7 +18,8 @@ function Invoke-Git {
         $ErrorActionPreference = $previousPreference
     }
     if ($gitExitCode -ne 0) { throw ($result -join "`n") }
-    return $result
+    # Return ordinary text so successful native stderr is not rendered as an error.
+    return ($result | ForEach-Object { $_.ToString() })
 }
 
 $lock = $null
