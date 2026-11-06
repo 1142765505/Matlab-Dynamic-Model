@@ -58,12 +58,24 @@ try {
     } elseif ($diffExit -ne 0) {
         throw 'Unable to inspect staged changes.'
     }
-    Invoke-Git -GitArgs @('fetch', 'origin', 'main') | Out-Null
+    try {
+        Invoke-Git -GitArgs @('fetch', 'origin', 'main') | Out-Null
+    } catch {
+        Write-Output 'Git fetch failed; trying the authenticated GitHub API.'
+        & (Join-Path $PSScriptRoot 'push-github-api.ps1')
+        return
+    }
     & git -C $repoPath merge-base --is-ancestor origin/main HEAD
     if ($LASTEXITCODE -ne 0) {
         throw 'Remote main has new commits. Reconcile local and remote changes before retrying; no force push was attempted.'
     }
-    Invoke-Git -GitArgs @('-c', 'credential.interactive=false', 'push', 'origin', 'main') | Write-Output
+    try {
+        Invoke-Git -GitArgs @('-c', 'credential.interactive=false', 'push', 'origin', 'main') | Write-Output
+    } catch {
+        Write-Output 'Git push failed; trying the authenticated GitHub API.'
+        & (Join-Path $PSScriptRoot 'push-github-api.ps1')
+        return
+    }
     $localHead = Invoke-Git -GitArgs @('rev-parse', 'HEAD')
     $remoteHead = Invoke-Git -GitArgs @('ls-remote', 'origin', 'refs/heads/main')
     if (($remoteHead -split '\s+')[0] -ne $localHead) { throw 'Remote verification failed.' }

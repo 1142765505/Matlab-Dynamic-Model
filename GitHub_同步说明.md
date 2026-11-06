@@ -14,6 +14,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\sync-github.ps1
 
 首次使用须在本机完成 GitHub 登录。若登录失效，可运行 `git credential-manager github login --username 1142765505 --device` 重新授权。
 
+当普通 Git 连接失败时，脚本会使用 Git Credential Manager 已保存的凭据，经 GitHub API 上传同一批 Git 对象，逐一校验文件、目录树和提交的哈希值。凭据不会写入文件或日志。
+
 如远端出现本机没有的提交，脚本会停止上传并保留本地文件及提交。需处理远端修改后再同步，脚本不会强制覆盖远端历史。
 
 在 Codex 的自动任务页面可暂停或删除“MATLAB 文件夹自动同步 GitHub”。
