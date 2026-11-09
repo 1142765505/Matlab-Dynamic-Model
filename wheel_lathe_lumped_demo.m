@@ -1,15 +1,9 @@
 function result = wheel_lathe_lumped_demo(outdir, p)
-% WHEEL_LATHE_LUMPED_DEMO Pure MATLAB wheel-lathe vibration demonstration.
-% Run: result = wheel_lathe_lumped_demo;
-% Custom: p.fs=64000; p.duration=8; p.rpm=90;
-%         result = wheel_lathe_lumped_demo('my_result',p);
-% Set p.showFigures=false to export SVGs without opening figure windows.
-% Base MATLAB only. SI units: kg, N, m, s.
-% ALL DEFAULT PHYSICAL PARAMETERS AND FORCE FLUCTUATIONS ARE ILLUSTRATIVE.
-% Linear 33-DOF CK8011D lumped model with separate cassette and holder rear.
-% Each body has 3 translations: radial, axial, tangential. No rotations,
-% contact opening, regenerative chatter or cutting-chip FE model is included.
-% Static preload effects must be represented by identified tangent stiffnesses.
+% CK8011D 轮对车削 33 自由度线性受迫振动模型，仅需基础 MATLAB。
+% 直接运行生成演示结果。实测包络辅助的单工况见 run_ck8011d_case。
+% 设置 p.showFigures=false 仅导出 SVG。结构求解采用 kg、N、m、s。
+% 默认结构和切削力参数用于演示，机床参数需实测标定。
+% 每个质量体有径向、轴向、切向平动，顶紧预载用切线刚度等效。
 
 if nargin < 1 || isempty(outdir)
     outdir = fullfile(fileparts(mfilename('fullpath')), 'matlab_result_ck8011d');
@@ -22,7 +16,7 @@ assert(p.fs > 2*p.forceNoiseCornerHz && p.fs > 2*p.plotMaxHz);
 assert(p.zetaLink > 0 && all(p.massKg > 0));
 rng(p.seed,'twister');
 
-% Node 6 is the holder front. Node 11 is the rear measurement point.
+% m6 为刀杆前端，m11 为远离刀片的刀杆后端测点。
 names = {'left_spindle_plate','left_centre','right_centre','wheelset', ...
          'carriage','holder','tip','bed','right_spindle_plate','cassette','holder_rear'};
 hardware = struct('machine','青重机床 CK8011D', ...
@@ -31,9 +25,8 @@ hardware = struct('machine','青重机床 CK8011D', ...
 nbody = numel(names); nd = 3*nbody;
 M = diag(kron(p.massKg(:),ones(3,1)));
 K = zeros(nd); C = zeros(nd);
-% Row [i,j,k_radial,k_axial,k_tangential]; j=0 means ground.
-% Connections to centres are tangent equivalents under the operating preload.
-% The tool-side stiffness split preserves the earlier static series compliance.
+% 每行 [i,j,径向刚度,轴向刚度,切向刚度]，j=0 表示地基。
+% 顶尖连接是预紧工作点附近的等效刚度，刀具链拆分保持原串联静刚度。
 links = [1 8 2e8 3e8 2e8; ...
          2 8 1e8 1.2e8 1e8; ...
          3 8 1e8 1.2e8 1e8; ...
@@ -60,8 +53,7 @@ for j = 1:size(links,1)
     if i2 ~= 0
         meq = p.massKg(i1)*p.massKg(i2)/(p.massKg(i1)+p.massKg(i2));
     end
-    % Illustrative link damping based on equivalent two-body mass.
-    % zetaLink is NOT the damping ratio of every assembled mode.
+    % 用两端约化质量估计连接阻尼，zetaLink 是连接参数。
     c = 2*p.zetaLink*sqrt(k*meq);
     [K,C] = add_link(K,C,i1,i2,k,c);
 end
@@ -79,8 +71,9 @@ end
 tip = dofs(7); holder = dofs(6); wheel = dofs(4); holderRear = dofs(11);
 B = zeros(nd,3); B(tip,:) = eye(3); B(wheel,:) = -eye(3);
 assert(norm(reshape(sum(reshape(B,3,nbody,3),2),3,3),'fro') < 1e-12);
-% Positive vector is the force on the tool; opposite force acts on wheelset.
+% 刀片与轮对承受同一切削力对，符号相反。
 dt = 1/p.fs; t = 0:dt:p.duration; N = numel(t);
+[meanForce,process] = cutting_load(p);
 fr = p.rpm/60;
 modulation = zeros(1,N);
 for j = 1:numel(p.orders)
@@ -91,12 +84,18 @@ rho = exp(-2*pi*p.forceNoiseCornerHz/p.fs);
 eta = filter(1-rho,[1 -rho],randn(3,N),[],2);
 eta = bsxfun(@minus,eta,mean(eta,2));
 eta = bsxfun(@rdivide,eta,std(eta,0,2));
-force = bsxfun(@times,p.meanForceN(:), ...
-        bsxfun(@plus,1+modulation,p.noiseFraction*eta));
-% No intentional chatter: this force is prescribed, independent of q.
+gain = ones(size(t));
+if isfield(p,'loadEnvelope')
+    e = p.loadEnvelope;
+    assert(numel(e.timeS)==numel(e.gain) && all(diff(e.timeS)>0) && ...
+        e.timeS(1)<=t(1) && e.timeS(end)>=t(end) && ...
+        all(isfinite(e.gain) & e.gain>=0),'载荷包络必须非负且覆盖仿真时间。');
+    gain = interp1(e.timeS,e.gain,t,'linear');
+end
+% 无量纲包络只调制随机力分量，切削力仍为给定外载。
+force = meanForce.*(1+modulation+p.noiseFraction*eta.*gain);
 
-% Newmark average-acceleration integration (beta=1/4, gamma=1/2).
-% Constant linear matrices allow one Cholesky factorization for all steps.
+% Newmark 平均加速度法。有效质量矩阵恒定，仅分解一次。
 beta = 1/4; gamma = 1/2;
 L = chol(M+gamma*dt*C+beta*dt^2*K,'lower');
 q = K\(B*force(:,1)); v = zeros(nd,1); acc = zeros(nd,1);
@@ -126,13 +125,15 @@ elapsed = toc;
 equilibriumResidual = maxResidual/max(maxRhs,1);
 assert(equilibriumResidual < 1e-6,'Dynamic equilibrium residual too large.');
 
-% Unit-force accelerance: output direction i, input direction j.
+% 加速度频响的第 i 行为输出方向，第 j 列为切削力对的方向。
 freq = linspace(0,p.plotMaxHz,p.frfPoints);
 Htip = complex(zeros(3,3,numel(freq)));
+Hrear = Htip;
 for j = 1:numel(freq)
     w = 2*pi*freq(j);
     U = (K-w^2*M+1i*w*C)\B;
     Htip(:,:,j) = -w^2*U(tip,:);
+    Hrear(:,:,j) = -w^2*U(holderRear,:);
 end
 keep = t >= p.discard;
 [freqFFT,ampFFT] = amplitude_spectrum(tipA(:,keep),p.fs);
@@ -150,19 +151,20 @@ disp(metrics);
 fprintf('Integration %.2f s; normalized equilibrium residual %.3g\n', ...
         elapsed,equilibriumResidual);
 
-% Numerical checks independent of machine calibration.
+% 以独立算例检查时间积分和频谱幅值缩放。
 validation = validate_integrator();
 assert(validation.relativePhasorError < 0.01,'Harmonic validation failed.');
 assert(validation.spectrumAmplitudeError < 1e-10,'FFT scaling check failed.');
 fprintf('Analytic harmonic check error %.4g; FFT amplitude error %.3g\n', ...
         validation.relativePhasorError,validation.spectrumAmplitudeError);
 
-result = struct('parameters',p,'hardware',hardware,'bodyNames',{names},'links',links, ...
+result = struct('parameters',p,'hardware',hardware,'process',process, ...
+    'loadEnvelopeGain',gain,'bodyNames',{names},'links',links, ...
     'M',M,'C',C,'K',K,'Bcut',B,'naturalFrequencyHz',fn,'time',t, ...
     'cuttingForceN',force,'tipAcceleration',tipA, ...
     'holderAcceleration',holderA,'holderRearAcceleration',holderRearA, ...
     'relativeDisplacement',relativeU, ...
-    'frequencyHz',freq,'tipAccelerance',Htip, ...
+    'frequencyHz',freq,'tipAccelerance',Htip,'holderRearAccelerance',Hrear, ...
     'fftFrequencyHz',freqFFT,'tipAmplitudeSpectrum',ampFFT, ...
     'holderRearAmplitudeSpectrum',rearAmpFFT, ...
     'metrics',metrics,'holderRearMetrics',rearMetrics,'validation',validation, ...
@@ -225,7 +227,7 @@ for j = 1:3
 end
 save_result_figure(fig,outdir,'unit_force_frf.svg',p.showFigures);
 
-% A longer time window exposes the low-frequency cutting-force modulation.
+% 用较长时窗展示切削力的低频阶次调制。
 forceWindow = t >= p.discard & t <= p.discard+2;
 fig = figure('Name','三向切削力','NumberTitle','off', ...
     'Visible','off','Color','w','Position',[50 50 950 650]);
@@ -271,8 +273,33 @@ save_result_figure(fig,outdir,'natural_frequencies.svg',p.showFigures);
 fprintf('Saved illustrative results to: %s\n',outdir);
 end
 
+function [force,process] = cutting_load(p)
+% 保留旧的给定力入口，提供工艺参数时改用剪切项与刃口项。
+validateattributes(p.rpm,{'numeric'},{'scalar','real','finite','nonnegative'});
+force = p.meanForceN(:);
+process = struct('mode','prescribed_force','rpm',p.rpm,'meanForceN',force);
+if ~isfield(p,'cutting'), return; end
+assert(p.rpm>0,'工艺力模式下工件转速必须大于零。');
+c = p.cutting;
+validateattributes(c.depthOfCutMm,{'numeric'},{'scalar','real','finite','nonnegative'});
+validateattributes(c.feedSpeedMmMin,{'numeric'},{'scalar','real','finite','nonnegative'});
+validateattributes(c.diameterMm,{'numeric'},{'scalar','real','finite','positive'});
+validateattributes(c.enteringAngleDeg,{'numeric'},{'scalar','real','finite','>',0,'<=',90});
+validateattributes(c.shearNPerMm2,{'numeric'},{'vector','numel',3,'real','finite','nonnegative'});
+validateattributes(c.edgeNPerMm,{'numeric'},{'vector','numel',3,'real','finite','nonnegative'});
+feed = c.feedSpeedMmMin/p.rpm;
+area = c.depthOfCutMm*feed;
+speed = pi*c.diameterMm*p.rpm/1000;
+edge = c.depthOfCutMm/sind(c.enteringAngleDeg);
+if area==0, edge = 0; end % 零切深或零进给用于本模型的空切近似。
+force = c.shearNPerMm2(:)*area+c.edgeNPerMm(:)*edge;
+process = struct('mode','mechanistic_force','rpm',p.rpm, ...
+    'feedPerRevMm',feed,'chipAreaMm2',area,'cuttingSpeedMMin',speed, ...
+    'engagedEdgeLengthMm',edge,'removalRateCm3Min',speed*area,'meanForceN',force);
+end
+
 function save_result_figure(fig,outdir,filename,showFigures)
-% Reuse the same plotted data. Leave desktop figures in Chinese.
+% 同一组曲线导出中英文两版，桌面显示中文版。
 [~,stemName,ext] = fileparts(filename);
 apply_plot_language(fig,2,'Times New Roman');
 print(fig,fullfile(outdir,[stemName '_en' ext]),'-dsvg','-vector');
@@ -312,7 +339,7 @@ for j=1:numel(fields)
     if ~isfield(p,fields{j}), p.(fields{j})=d.(fields{j}); end
 end
 if numel(p.massKg)==9
-    % Split the original holder mass evenly and append the cassette.
+    % 兼容旧版 9 项质量：均分刀杆质量，并追加刀盒。
     p.massKg = p.massKg(:).';
     p.massKg(6) = p.massKg(6)/2;
     p.massKg(10:11) = [d.massKg(10),p.massKg(6)];
@@ -323,7 +350,7 @@ assert(numel(p.orders)==numel(p.orderPhase));
 end
 
 function links = expand_legacy_links(links)
-% Preserve static series stiffness of the original 7–6 and 6–5 links.
+% 展开旧连接，保持 7–6 和 6–5 的静态串联等效刚度。
 ends = sort(links(:,1:2),2);
 insertLink = all(ends==[6 7],2);
 holderLink = all(ends==[5 6],2);
@@ -352,8 +379,7 @@ end
 end
 
 function [f,A] = amplitude_spectrum(x,fs)
-% Periodic Hann window, coherent-gain corrected; no Signal Toolbox.
-% For broadband noise this is an amplitude spectrum, NOT a PSD estimate.
+% 周期 Hann 窗并作相干增益修正，输出单边幅度谱。
 n=size(x,2); x=bsxfun(@minus,x,mean(x,2));
 w=0.5-0.5*cos(2*pi*(0:n-1)/n);
 y=fft(bsxfun(@times,x,w),[],2)/sum(w);
@@ -367,7 +393,7 @@ f=(0:last-1)*fs/n;
 end
 
 function val = validate_integrator()
-% Independent scalar oscillator, analytic sinusoidal steady-state initial data.
+% 独立单自由度算例，以解析正弦稳态结果为参考。
 m=2; k=2e5; c=100; f=30; w=2*pi*f; F=10;
 dt=1/16000; t=0:dt:1;
 X=F/(k-w*w*m+1i*w*c);
