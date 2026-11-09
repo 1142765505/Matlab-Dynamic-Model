@@ -1,4 +1,4 @@
-# 落轮车床集中参数动力学示例
+# CK8011D 轮对车削集中参数动力学示例
 
 本示例完全使用 MATLAB 基础功能，不依赖有限元软件、Simulink 或额外工具箱。已在 MATLAB R2025b 中执行。
 
@@ -12,12 +12,12 @@
 result = wheel_lathe_lumped_demo;
 ```
 
-结果默认保存在脚本旁边的 matlab_result 文件夹。MATLAB 桌面运行时也会打开结果图窗口。设置 `p.showFigures = false` 可只保存 PNG，适合批量运行。
+新版结果默认保存在 `matlab_result_ck8011d`。`matlab_result` 和原学术汇报对应旧 27 自由度模型。MATLAB 桌面运行时会打开中文图窗，设置 `p.showFigures = false` 可仅导出 SVG。
 
 自定义示例：
 
 ```matlab
-p.fs = 32000;
+p.fs = 64000;
 p.duration = 8;
 p.discard = 2;
 p.rpm = 90;
@@ -28,19 +28,23 @@ result = wheel_lathe_lumped_demo('my_result', p);
 
 ## 模型
 
-9 个集中质量体，每个具有径向、轴向、切向 3 个平动自由度，共 27 自由度：
+青重机床 CK8011D 模型包含 11 个集中质量体，每个保留径向、轴向、切向 3 个平动自由度，共 33 自由度。
 
 1. 左主轴及转盘等效质量；
 2. 左顶尖支承等效质量；
 3. 右顶尖支承等效质量；
 4. 轮对等效质量；
 5. 刀台；
-6. 刀杆/夹持体；
-7. 刀尖附近等效质量；
+6. 刀杆前端（山高 R175.33-5055，靠近刀盒）；
+7. 刀片/刀尖等效质量（山高 LNMX191940-RR94 TP0501）；
 8. 床身；
-9. 右主轴及转盘等效质量。
+9. 右主轴及转盘等效质量；
+10. 刀盒（山高 R175.32-3223-30）；
+11. 刀杆后端（R175.33-5055，远离刀片的测点）。
 
-修正版增加右主轴转盘与轮对、床身的等效弹簧阻尼连接。右侧默认参数暂与左侧相同，仅用于演示，应按实际结构分别标定。原有 m1–m8 编号保持不变。
+刀具侧传力路径为 `m7 → m10 → m6 → m11 → m5 → m8 → 地基`。默认把原 9 kg 的刀杆等效质量均分给前后端，刀盒初始质量取目录净重 0.162 kg。刀片到刀杆前端以及刀杆前端到刀台的两组串联连接分别保留原连接的静态等效刚度。各接口刚度、阻尼和刀杆等效质量仍需标定。
+
+按指定型号建模。山高目录给 `R175.32-3223-30` 标注的刀片侧接口为 `LN..3019..`，装配时需核对它与 `LNMX191940-RR94 TP0501` 的实际适配性。[刀盒目录](https://www.secotools.com/article/p_00013035) · [刀片目录](https://www.secotools.com/article/p_02960792)
 
 部件之间使用方向相关的弹簧、黏性阻尼连接，床身通过弹簧阻尼连接地基。动力学方程为 M*qdd+C*qd+K*q=B*F(t)。切削力同时作用于刀具和轮对，方向相反。
 
@@ -52,7 +56,7 @@ result = wheel_lathe_lumped_demo('my_result', p);
 部件编号1  部件编号2  径向刚度  轴向刚度  切向刚度
 ```
 
-编号 0 表示地基，刚度单位 N/m。也可设置 p.links 覆盖整张连接表。质量通过 p.massKg 设置，顺序与上述部件一致。模型中第 7 个质量是等效自由度质量，不应机械地解释为刀片实际质量。
+编号 0 表示地基，刚度单位 N/m。通过 `p.links` 覆盖连接表，通过 `p.massKg` 设置与上述部件顺序一致的质量。旧的 9 项质量向量会按默认规则拆分刀杆并追加刀盒，含 `7–6` 和 `6–5` 的旧连接表会展开成新版刀具链。第 7 个质量为刀尖等效惯性。
 
 连接阻尼演示公式为 c=2*zetaLink*sqrt(k*m_equivalent)。zetaLink 不等于组装后每一阶模态的阻尼比；真实阻尼需要实验识别。
 
@@ -64,20 +68,23 @@ result = wheel_lathe_lumped_demo('my_result', p);
 
 ## 输出
 
-- simulation.mat：参数、矩阵、刀尖及刀杆三向加速度、刀具/轮对相对位移、完整 3×3 加速度频响。
+- simulation.mat：设备型号、参数、矩阵、刀尖及刀杆前后端三向加速度、刀具/轮对相对位移、刀尖完整 3×3 加速度频响。
 - metrics.csv：丢弃初始段后的三向 RMS、峰值及 RMS g 值。
 - tip_acceleration.csv：刀尖三向加速度时间历程，单位 m/s²。
 - tip_amplitude_spectrum.csv：去均值、周期 Hann 窗、相干增益校正后的单边幅度谱；它不是功率谱密度。
 - natural_frequencies.csv：未阻尼固有频率。
-- acceleration.png：三向时间历程局部与幅度谱。
-- unit_force_frf.png：同向输入输出的单位力加速度频响。
-- cutting_force.png：刀具所受三向切削力，展示丢弃初始段后的最多 2 秒。
-- tool_response.png：同一时间窗口内的三向刀尖与刀杆加速度对比，以及刀尖减去轮对的相对位移（μm，保留静态偏移）。默认展示丢弃初始段后的 0.25 秒。
-- natural_frequencies.png：按频率排序的 27 阶未阻尼固有频率。
+- holder_rear_acceleration.csv：刀杆后端三向加速度时程，单位 m/s²。
+- holder_rear_amplitude_spectrum.csv：刀杆后端三向单边幅度谱。
+- holder_rear_metrics.csv：刀杆后端三向 RMS、峰值及 RMS g 值。
+- acceleration.svg 和 holder_rear_acceleration.svg：刀尖和刀杆后端的三向加速度局部时程及单边幅度谱。
+- unit_force_frf.svg：刀尖同向输入输出的单位力加速度频响。
+- cutting_force.svg：刀具所受三向切削力，展示丢弃初始段后的最多 2 秒。
+- tool_response.svg：刀尖、刀杆前后端加速度对比及刀尖相对轮对的位移（μm）。默认展示丢弃初始段后的 0.25 秒。
+- natural_frequencies.svg：33 阶未阻尼固有频率。
 
-每张图同时导出中文宋体和英文 Times New Roman 两版。上述文件名对应中文版，英文版在 `.png` 前加 `_en`（例如 `tool_response_en.png`）。MATLAB 桌面显示中文版。
+每张图同时导出中文宋体和英文 Times New Roman 两版，共 12 张矢量 SVG。英文版加 `_en` 后缀，例如 `tool_response_en.svg`。
 
-result.holderAcceleration 是刀杆等效质量点的加速度，可用于比较刀杆传感器测点；它与 result.tipAcceleration 不同。实际传感器方向、安装位置、传感器及安装件质量应在标定时考虑。
+`result.holderAcceleration` 对应刀杆前端 m6，`result.holderRearAcceleration` 对应后端 m11。两者均按径向、轴向、切向排列。与实测比较时需要对齐传感器方向、安装位置和安装附加质量。
 
 三向力联合输入时，在同一频率下应进行复数响应相加后再取模，不能直接相加各幅值。
 
@@ -85,7 +92,7 @@ result.holderAcceleration 是刀杆等效质量点的加速度，可用于比较
 
 采用 Newmark 平均加速度法（beta=1/4，gamma=1/2），固定矩阵仅做一次 Cholesky 分解。脚本包含质量/刚度/阻尼正定检查、切削力作用反作用检查、动力平衡残差、单自由度解析谐响应校验及 FFT 幅值标定校验。
 
-默认 fs=32 kHz 是计算/输出采样设置，不意味着这个 27 自由度模型能真实描述到 16 kHz。模态频率由脚本计算和导出，频谱解释范围应受模型物理有效带宽限制。改变质量、刚度后需重新检查时间步长、激励带宽与数值收敛。
+默认采样率为 64 kHz，频谱绘图上限为 4 kHz。模型的物理有效带宽需用实测频响确认。改变质量或刚度后应重新检查时间步长和数值收敛。
 
 ## 真实参数如何得到
 
