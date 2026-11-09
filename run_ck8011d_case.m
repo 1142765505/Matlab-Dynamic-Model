@@ -7,6 +7,9 @@ assert(all(cellfun(@isfile,cfg.wavFiles)),'找不到 WAV，请在 ck8011d_case_c
 validateattributes(cfg.envelopeChannel,{'numeric'},{'scalar','integer','>=',1,'<=',4});
 validateattributes(cfg.recordingStartS,{'numeric'},{'scalar','finite','nonnegative'});
 validateattributes(cfg.envelopeBlockS,{'numeric'},{'scalar','finite','positive'});
+validateattributes(cfg.accelerationPerFS,{'numeric'},{'vector','real','finite','positive'});
+scale = cfg.accelerationPerFS(:).';
+assert(ismember(numel(scale),[1 4]),'请提供统一满量程系数，或按 CH1–CH4 提供四个系数。');
 
 % 两设备分别截取各自文件的时间段，仅使用各通道幅值和功率谱。
 recordingDurationS = zeros(1,2);
@@ -47,31 +50,40 @@ p.loadEnvelope = struct('timeS',[0,timeS,p.duration], 'gain',[gain(1),gain,gain(
 p.measurement = struct('caseID',cfg.caseID,'toolID',cfg.toolID,'side',cfg.toolSide, ...
     'date',cfg.acquisitionDate,'acquisition',cfg.acquisition,'sourceFiles',{cfg.wavFiles}, ...
     'recordingStartS',cfg.recordingStartS,'sampleRateHz',fs, ...
-    'envelopeChannel',cfg.envelopeChannel,'parameterBasis',cfg.parameterBasis);
+    'envelopeChannel',cfg.envelopeChannel,'parameterBasis',cfg.parameterBasis, ...
+    'accelerationPerFS',scale,'calibratedUnit','m/s^2');
 result = wheel_lathe_lumped_demo(cfg.outputDir,p);
 
-% 同工况比较频率分布。实测为 FS，仿真为 m/s²，分别归一化频带积分。
+% 频谱按各通道的带内功率归一化，时域幅值按满量程换算。
+obsTime = (0:count-1)'/fs;
+obsTime = obsTime(obsTime>=p.discard);
 obs = measured((0:count-1)/fs>=p.discard,:);
+simTime = result.time(result.time>=p.discard).';
 sim = result.holderRearAcceleration(:,result.time>=p.discard).';
 [f,obsP] = normalized_psd(obs,fs,cfg.comparisonBandHz);
 [fSim,simP] = normalized_psd(sim,p.fs,cfg.comparisonBandHz);
 assert(isequal(f,fSim),'实测与仿真 PSD 的频率网格不一致。');
 [~,ix] = max(obsP,[],1);
 obsAC = obs-mean(obs,1);
+obsAcceleration = obsAC.*scale;
 names = {'CH1','CH2','CH3','CH4'};
-summary = table(string(names(:)),sqrt(mean(obsAC.^2,1)).',max(abs(obsAC),[],1).',f(ix), ...
-    'VariableNames',{'channel','rms_FS','peak_FS','dominant_frequency_Hz'});
+summary = table(string(names(:)),sqrt(mean(obsAcceleration.^2,1)).', ...
+    max(abs(obsAcceleration),[],1).',f(ix),sqrt(mean(obsAC.^2,1)).', ...
+    max(abs(obsAC),[],1).', ...
+    'VariableNames',{'channel','rms_m_s2','peak_m_s2','dominant_frequency_Hz','rms_FS','peak_FS'});
 writetable(summary,fullfile(cfg.outputDir,'measured_channel_metrics.csv'));
 writetable(array2table([f,obsP,simP], ...
     'VariableNames',{'frequency_Hz','CH1','CH2','CH3','CH4','m11_radial','m11_axial','m11_tangential'}), ...
     fullfile(cfg.outputDir,'normalized_psd_comparison.csv'));
-writetable(table(timeS(:),level(:),gain(:),'VariableNames',{'case_time_s','block_rms_FS','gain'}), ...
+writetable(table(timeS(:),level(:)*scale(min(cfg.envelopeChannel,numel(scale))),level(:),gain(:), ...
+    'VariableNames',{'case_time_s','block_rms_m_s2','block_rms_FS','gain'}), ...
     fullfile(cfg.outputDir,'measured_load_envelope.csv'));
 
 % 工况清单同时保留来源、计算量与待核实的输入。
 info = struct('config',cfg,'wavSampleRateHz',fs,'recordingDurationS',recordingDurationS, ...
     'process',result.process,'simulatedDurationS',p.duration, ...
-    'measurementUnit','WAV full scale (FS)','conditioning','median-normalized block RMS');
+    'measurementUnit','m/s^2','rawMeasurementUnit','WAV full scale (FS)', ...
+    'conditioning','median-normalized block RMS');
 fid = fopen(fullfile(cfg.outputDir,'case_metadata.json'),'w','n','UTF-8');
 assert(fid~=-1,'无法写入工况清单。');
 closeFile = onCleanup(@() fclose(fid));
@@ -84,11 +96,13 @@ for lang = 1:2
         titles={'实测信号频谱（按通道归一化）','刀杆后端仿真频谱（按方向归一化）','实测相对波动包络'};
         freqLabel='频率 (Hz)'; psdLabel='归一化功率谱密度 (1/Hz)';
         timeLabel='工况时间 (s)'; gainLabel='随机力增益'; dirs={'径向','轴向','切向'};
+        accelLabel='加速度 (m/s^2)'; timeTitles={'实测四通道加速度（满量程换算）','刀杆后端仿真三向加速度'};
     else
         font='Times New Roman'; suffix='_en';
         titles={'Measured channel spectra','Simulated holder rear spectra','Measured load envelope'};
         freqLabel='Frequency (Hz)'; psdLabel='Normalized PSD (1/Hz)';
         timeLabel='Case time (s)'; gainLabel='Random force gain'; dirs={'Radial','Axial','Tangential'};
+        accelLabel='Acceleration (m/s^2)'; timeTitles={'Measured acceleration after full-scale conversion','Simulated holder rear acceleration'};
     end
     fig = figure('Visible','off','Color','w','Position',[50 50 1100 780]);
     subplot(3,1,1); semilogy(f,max(obsP,eps)); grid on; xlim(cfg.comparisonBandHz);
@@ -99,6 +113,22 @@ for lang = 1:2
     xlabel(timeLabel); ylabel(gainLabel); title(titles{3});
     set(findall(fig,'-property','FontName'),'FontName',font);
     print(fig,fullfile(cfg.outputDir,['measurement_comparison' suffix '.svg']),'-dsvg','-vector');
+    close(fig);
+
+    % 以相同的工况时间截取波形，各子图保留独立的加速度刻度。
+    lastTime = min(p.discard+0.25,p.duration);
+    obsShow = obsTime<=lastTime;
+    simShow = simTime<=lastTime;
+    fig = figure('Visible','off','Color','w','Position',[50 50 1100 660]);
+    axMeasured = subplot(2,1,1);
+    plot(obsTime(obsShow),obsAcceleration(obsShow,:)); grid on;
+    ylabel(accelLabel); title(timeTitles{1}); legend(names,'Location','northeast');
+    axSim = subplot(2,1,2);
+    plot(simTime(simShow),sim(simShow,:)); grid on;
+    xlabel(timeLabel); ylabel(accelLabel); title(timeTitles{2}); legend(dirs,'Location','northeast');
+    linkaxes([axMeasured axSim],'x'); xlim([p.discard lastTime]);
+    set(findall(fig,'-property','FontName'),'FontName',font);
+    print(fig,fullfile(cfg.outputDir,['measurement_time_comparison' suffix '.svg']),'-dsvg','-vector');
     close(fig);
 end
 result.measurement = info;

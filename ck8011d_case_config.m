@@ -14,6 +14,7 @@ cfg.wavFiles = {fullfile(data,'Record1.wav'),fullfile(data,'Record_1_2.wav')};
 cfg.recordingStartS = 60;       % 两台设备各自文件的起点偏移，单位 s。
 cfg.envelopeChannel = 1;        % CH1 用于估计相对波动，不指定结构方向。
 cfg.envelopeBlockS = 0.5;
+cfg.accelerationPerFS = 10;    % 用户提供的峰值满量程：±1 FS 对应 ±10 m/s²。
 
 % 这三个数值取本地车削计算器默认值，缺少采集3对应的机床日志。
 cfg.model.rpm = 30;                   % 工件转速，r/min。

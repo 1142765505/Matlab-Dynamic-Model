@@ -1,7 +1,7 @@
 {
   "config": {
     "caseID": "tool11_acq03",
-    "outputDir": "C:\\Temp\\ck8011d-tool11-c2233a7edf86472dbb50a5728ee28141",
+    "outputDir": "G:\\刀具磨损论文及数据集\\Matlab切削动力学模型\\matlab_result_tool11_acq03",
     "toolID": "刀具11",
     "toolSide": "右",
     "acquisitionDate": "2025-11-05",
@@ -14,6 +14,7 @@
     "recordingStartS": 60,
     "envelopeChannel": 1,
     "envelopeBlockS": 0.5,
+    "accelerationPerFS": 10,
     "model": {
       "rpm": 30,
       "cutting": {
@@ -53,9 +54,9 @@
     "rpm": 30,
     "feedPerRevMm": 1,
     "chipAreaMm2": 1,
-    "cuttingSpeedMMin": 75.398223686155035,
+    "cuttingSpeedMMin": 75.39822368615503,
     "engagedEdgeLengthMm": 1,
-    "removalRateCm3Min": 75.398223686155035,
+    "removalRateCm3Min": 75.39822368615503,
     "meanForceN": [
       600,
       350,
@@ -63,6 +64,7 @@
     ]
   },
   "simulatedDurationS": 8,
-  "measurementUnit": "WAV full scale (FS)",
+  "measurementUnit": "m/s^2",
+  "rawMeasurementUnit": "WAV full scale (FS)",
   "conditioning": "median-normalized block RMS"
 }
