@@ -74,26 +74,33 @@ assert(norm(reshape(sum(reshape(B,3,nbody,3),2),3,3),'fro') < 1e-12);
 % 刀片与轮对承受同一切削力对，符号相反。
 dt = 1/p.fs; t = 0:dt:p.duration; N = numel(t);
 [meanForce,process] = cutting_load(p);
-fr = p.rpm/60;
-modulation = zeros(1,N);
-for j = 1:numel(p.orders)
-    modulation = modulation + p.orderFraction(j)* ...
-        sin(2*pi*p.orders(j)*fr*t + p.orderPhase(j));
+calibration = struct('enabled',false);
+if isfield(p,'forceCalibration')
+    [dynamicForce,calibration] = calibrated_force(p,M,C,K,B,holderRear,N);
+    force = meanForce+dynamicForce;
+    gain = ones(size(t)); % 此分支只用训练段频谱，留出段不参与载荷生成。
+else
+    fr = p.rpm/60;
+    modulation = zeros(1,N);
+    for j = 1:numel(p.orders)
+        modulation = modulation + p.orderFraction(j)* ...
+            sin(2*pi*p.orders(j)*fr*t + p.orderPhase(j));
+    end
+    rho = exp(-2*pi*p.forceNoiseCornerHz/p.fs);
+    eta = filter(1-rho,[1 -rho],randn(3,N),[],2);
+    eta = bsxfun(@minus,eta,mean(eta,2));
+    eta = bsxfun(@rdivide,eta,std(eta,0,2));
+    gain = ones(size(t));
+    if isfield(p,'loadEnvelope')
+        e = p.loadEnvelope;
+        assert(numel(e.timeS)==numel(e.gain) && all(diff(e.timeS)>0) && ...
+            e.timeS(1)<=t(1) && e.timeS(end)>=t(end) && ...
+            all(isfinite(e.gain) & e.gain>=0),'载荷包络必须非负且覆盖仿真时间。');
+        gain = interp1(e.timeS,e.gain,t,'linear');
+    end
+    % 无量纲包络只调制随机力分量，切削力仍为给定外载。
+    force = meanForce.*(1+modulation+p.noiseFraction*eta.*gain);
 end
-rho = exp(-2*pi*p.forceNoiseCornerHz/p.fs);
-eta = filter(1-rho,[1 -rho],randn(3,N),[],2);
-eta = bsxfun(@minus,eta,mean(eta,2));
-eta = bsxfun(@rdivide,eta,std(eta,0,2));
-gain = ones(size(t));
-if isfield(p,'loadEnvelope')
-    e = p.loadEnvelope;
-    assert(numel(e.timeS)==numel(e.gain) && all(diff(e.timeS)>0) && ...
-        e.timeS(1)<=t(1) && e.timeS(end)>=t(end) && ...
-        all(isfinite(e.gain) & e.gain>=0),'载荷包络必须非负且覆盖仿真时间。');
-    gain = interp1(e.timeS,e.gain,t,'linear');
-end
-% 无量纲包络只调制随机力分量，切削力仍为给定外载。
-force = meanForce.*(1+modulation+p.noiseFraction*eta.*gain);
 
 % Newmark 平均加速度法。有效质量矩阵恒定，仅分解一次。
 beta = 1/4; gamma = 1/2;
@@ -158,7 +165,7 @@ assert(validation.spectrumAmplitudeError < 1e-10,'FFT scaling check failed.');
 fprintf('Analytic harmonic check error %.4g; FFT amplitude error %.3g\n', ...
         validation.relativePhasorError,validation.spectrumAmplitudeError);
 
-result = struct('parameters',p,'hardware',hardware,'process',process, ...
+result = struct('parameters',p,'hardware',hardware,'process',process,'calibration',calibration, ...
     'loadEnvelopeGain',gain,'bodyNames',{names},'links',links, ...
     'M',M,'C',C,'K',K,'Bcut',B,'naturalFrequencyHz',fn,'time',t, ...
     'cuttingForceN',force,'tipAcceleration',tipA, ...
@@ -271,6 +278,37 @@ setappdata(gca,'PlotLabels', ...
      'Undamped natural frequencies', 'Mode index', 'Natural frequency (Hz)'});
 save_result_figure(fig,outdir,'natural_frequencies.svg',p.showFigures);
 fprintf('Saved illustrative results to: %s\n',outdir);
+end
+
+function [force,fit] = calibrated_force(p,M,C,K,B,holderRear,N)
+% 在给定结构频响下，反推可复现实测谱量级的等效力谱。
+c = p.forceCalibration;
+f = c.frequencyHz(:);
+forcePsd = zeros(numel(f),3);
+force = zeros(3,N);
+bins = 0:N-1;
+fftFrequency = min(bins,N-bins)*p.fs/N;
+% 平均加速度 Newmark 的离散频响采用双线性变换后的角频率。
+omega = 2*p.fs*tan(pi*f/p.fs);
+for d = find(c.channelByDirection(:).')
+    H = zeros(size(f));
+    for k = 1:numel(f)
+        w = omega(k);
+        q = (K-w^2*M+1i*w*C)\B(:,d);
+        H(k) = abs(w^2*q(holderRear(d)));
+    end
+    lower = c.gainFloorRatio*max(H);
+    assert(lower>0,'所选输入和输出之间没有可用于标定的频响。');
+    forcePsd(:,d) = c.accelerationPsd(:,d)./max(H,lower).^2;
+    density = interp1(f,forcePsd(:,d),fftFrequency,'linear',0);
+    phase = fft(randn(1,N));
+    phase = phase./max(abs(phase),eps);
+    % 单边 PSD 对应共轭 FFT 两侧各分一半功率。随机相位由种子决定。
+    force(d,:) = ifft(phase.*sqrt(density*p.fs*N/2),'symmetric');
+end
+fit = struct('enabled',true,'channelByDirection',c.channelByDirection, ...
+    'mappingConfirmed',c.mappingConfirmed,'frequencyHz',f,'forcePsd_N2PerHz',forcePsd, ...
+    'dynamicForceRmsN',sqrt(mean(force.^2,2)));
 end
 
 function [force,process] = cutting_load(p)

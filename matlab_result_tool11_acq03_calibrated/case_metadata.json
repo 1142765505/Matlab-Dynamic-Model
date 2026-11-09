@@ -1,0 +1,86 @@
+{
+  "config": {
+    "caseID": "tool11_acq03",
+    "outputDir": "G:\\刀具磨损论文及数据集\\Matlab切削动力学模型\\matlab_result_tool11_acq03_calibrated",
+    "toolID": "刀具11",
+    "toolSide": "右",
+    "acquisitionDate": "2025-11-05",
+    "acquisition": 3,
+    "recordedDiameterInfeed": 2,
+    "wavFiles": [
+      "G:\\刀具磨损论文及数据集\\实验三工况崩刀\\工况2：刀具11左右新刀-LNMX191940-RR94Tp0501\\采集3轮1下刀2正常\\Record1.wav",
+      "G:\\刀具磨损论文及数据集\\实验三工况崩刀\\工况2：刀具11左右新刀-LNMX191940-RR94Tp0501\\采集3轮1下刀2正常\\Record_1_2.wav"
+    ],
+    "recordingStartS": 60,
+    "envelopeChannel": 1,
+    "envelopeBlockS": 0.5,
+    "accelerationPerFS": [
+      10,
+      10,
+      10,
+      null
+    ],
+    "model": {
+      "rpm": 30,
+      "cutting": {
+        "feedSpeedMmMin": 30,
+        "diameterMm": 800,
+        "depthOfCutMm": 1,
+        "enteringAngleDeg": 90,
+        "shearNPerMm2": [
+          600,
+          350,
+          1800
+        ],
+        "edgeNPerMm": [
+          0,
+          0,
+          0
+        ]
+      },
+      "fs": 64000,
+      "duration": 8,
+      "discard": 2,
+      "showFigures": false
+    },
+    "comparisonBandHz": [
+      20,
+      4000
+    ],
+    "calibration": {
+      "enabled": true,
+      "channelByDirection": [
+        2,
+        1,
+        3
+      ],
+      "mappingConfirmed": true,
+      "splitTimeS": 5,
+      "gainFloorRatio": 0.0003
+    },
+    "parameterBasis": "30 r/min、30 mm/min、800 mm 取车削计算器示例值。进刀量 2 暂按直径减小 2 mm 解释。"
+  },
+  "wavSampleRateHz": 32000,
+  "recordingDurationS": [
+    176.4,
+    176.4
+  ],
+  "process": {
+    "mode": "mechanistic_force",
+    "rpm": 30,
+    "feedPerRevMm": 1,
+    "chipAreaMm2": 1,
+    "cuttingSpeedMMin": 75.39822368615503,
+    "engagedEdgeLengthMm": 1,
+    "removalRateCm3Min": 75.39822368615503,
+    "meanForceN": [
+      600,
+      350,
+      1800
+    ]
+  },
+  "simulatedDurationS": 8,
+  "measurementUnit": "m/s^2 for calibrated acceleration channels; FS for other channels",
+  "rawMeasurementUnit": "WAV full scale (FS)",
+  "conditioning": "median-normalized block RMS"
+}
