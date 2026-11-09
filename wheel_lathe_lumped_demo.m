@@ -3,6 +3,7 @@ function result = wheel_lathe_lumped_demo(outdir, p)
 % Run: result = wheel_lathe_lumped_demo;
 % Custom: p.fs=32000; p.duration=8; p.rpm=90;
 %         result = wheel_lathe_lumped_demo('my_result',p);
+% Set p.showFigures=false to export PNGs without opening figure windows.
 % Base MATLAB only. SI units: kg, N, m, s.
 % ALL DEFAULT PHYSICAL PARAMETERS AND FORCE FLUCTUATIONS ARE ILLUSTRATIVE.
 % This is a linear 27-DOF lumped model, not a calibrated machine prediction.
@@ -159,10 +160,11 @@ writetable(table(freqFFT(:),ampFFT(1,:)',ampFFT(2,:)',ampFFT(3,:)', ...
 writetable(table((1:nd)',fn,'VariableNames',{'mode','frequency_Hz'}), ...
     fullfile(outdir,'natural_frequencies.csv'));
 
-fig = figure('Visible','off','Color','w','Position',[50 50 1100 850]);
+short = t >= p.discard & t <= p.discard+0.25;
+fig = figure('Name','Tool tip acceleration','NumberTitle','off', ...
+    'Visible','off','Color','w','Position',[50 50 1100 850]);
 for j = 1:3
     subplot(3,2,2*j-1);
-    short = t >= p.discard & t <= min(p.discard+0.25,p.duration);
     plot(t(short),tipA(j,short),'LineWidth',0.7); grid on;
     xlabel('Time (s)'); ylabel('Acceleration (m/s^2)'); title(axesNames{j});
     subplot(3,2,2*j);
@@ -170,16 +172,64 @@ for j = 1:3
     xlim([0 p.plotMaxHz]); xlabel('Frequency (Hz)');
     ylabel('Single-sided amplitude (m/s^2)'); title('Windowed amplitude spectrum');
 end
-print(fig,fullfile(outdir,'acceleration.png'),'-dpng','-r140'); close(fig);
-fig = figure('Visible','off','Color','w','Position',[50 50 950 650]);
+save_result_figure(fig,outdir,'acceleration.png',p.showFigures);
+
+fig = figure('Name','Unit-force accelerance','NumberTitle','off', ...
+    'Visible','off','Color','w','Position',[50 50 950 650]);
 for j = 1:3
     subplot(3,1,j);
     semilogy(freq,max(squeeze(abs(Htip(j,j,:))),1e-16)); grid on;
     xlabel('Frequency (Hz)'); ylabel('(m/s^2)/N');
     title([axesNames{j} ' unit-force accelerance']);
 end
-print(fig,fullfile(outdir,'unit_force_frf.png'),'-dpng','-r140'); close(fig);
+save_result_figure(fig,outdir,'unit_force_frf.png',p.showFigures);
+
+% A longer time window exposes the low-frequency cutting-force modulation.
+forceWindow = t >= p.discard & t <= p.discard+2;
+fig = figure('Name','Cutting force','NumberTitle','off', ...
+    'Visible','off','Color','w','Position',[50 50 950 650]);
+for j = 1:3
+    subplot(3,1,j);
+    plot(t(forceWindow),force(j,forceWindow),'LineWidth',0.7); grid on;
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title([axesNames{j} ' cutting force on tool']);
+end
+save_result_figure(fig,outdir,'cutting_force.png',p.showFigures);
+
+fig = figure('Name','Tool and wheelset response','NumberTitle','off', ...
+    'Visible','off','Color','w','Position',[50 50 1100 850]);
+for j = 1:3
+    subplot(3,2,2*j-1);
+    plot(t(short),tipA(j,short),t(short),holderA(j,short),'LineWidth',0.7); grid on;
+    xlabel('Time (s)'); ylabel('Acceleration (m/s^2)');
+    title([axesNames{j} ' acceleration']);
+    if j == 1
+        legend('Tool tip','Tool holder','Location','best');
+    end
+    subplot(3,2,2*j);
+    plot(t(short),1e6*relativeU(j,short),'LineWidth',0.7); grid on;
+    xlabel('Time (s)'); ylabel('Relative displacement ({\mu}m)');
+    title([axesNames{j} ' displacement: tip minus wheelset']);
+end
+save_result_figure(fig,outdir,'tool_response.png',p.showFigures);
+
+fig = figure('Name','Undamped natural frequencies','NumberTitle','off', ...
+    'Visible','off','Color','w','Position',[50 50 950 500]);
+stem(1:nd,fn,'filled'); grid on;
+xlim([0.5 nd+0.5]); xticks(1:nd);
+xlabel('Mode index'); ylabel('Natural frequency (Hz)');
+title('Undamped natural frequencies');
+save_result_figure(fig,outdir,'natural_frequencies.png',p.showFigures);
 fprintf('Saved illustrative results to: %s\n',outdir);
+end
+
+function save_result_figure(fig,outdir,filename,showFigures)
+print(fig,fullfile(outdir,filename),'-dpng','-r140');
+if showFigures
+    set(fig,'Visible','on');
+else
+    close(fig);
+end
 end
 
 function p = defaults(p)
@@ -190,6 +240,7 @@ d.meanForceN=[600 350 1800];
 d.orders=[1 6 12]; d.orderFraction=[0.08 0.04 0.02];
 d.orderPhase=[0 0.3 0.8]; d.noiseFraction=0.04;
 d.forceNoiseCornerHz=600; d.plotMaxHz=1500; d.frfPoints=3001;
+d.showFigures=usejava('desktop');
 fields=fieldnames(d);
 for j=1:numel(fields)
     if ~isfield(p,fields{j}), p.(fields{j})=d.(fields{j}); end

@@ -12,7 +12,7 @@
 result = wheel_lathe_lumped_demo;
 ```
 
-结果默认保存在脚本旁边的 matlab_result 文件夹。
+结果默认保存在脚本旁边的 matlab_result 文件夹。MATLAB 桌面运行时也会打开结果图窗口。设置 `p.showFigures = false` 可只保存 PNG，适合批量运行。
 
 自定义示例：
 
@@ -71,6 +71,9 @@ result = wheel_lathe_lumped_demo('my_result', p);
 - natural_frequencies.csv：未阻尼固有频率。
 - acceleration.png：三向时间历程局部与幅度谱。
 - unit_force_frf.png：同向输入输出的单位力加速度频响。
+- cutting_force.png：刀具所受三向切削力，展示丢弃初始段后的最多 2 秒。
+- tool_response.png：同一时间窗口内的三向刀尖与刀杆加速度对比，以及刀尖减去轮对的相对位移（μm，保留静态偏移）。默认展示丢弃初始段后的 0.25 秒。
+- natural_frequencies.png：按频率排序的 27 阶未阻尼固有频率。
 
 result.holderAcceleration 是刀杆等效质量点的加速度，可用于比较刀杆传感器测点；它与 result.tipAcceleration 不同。实际传感器方向、安装位置、传感器及安装件质量应在标定时考虑。
 
