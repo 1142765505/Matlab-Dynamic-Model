@@ -75,6 +75,8 @@ result = wheel_lathe_lumped_demo('my_result', p);
 - tool_response.png：同一时间窗口内的三向刀尖与刀杆加速度对比，以及刀尖减去轮对的相对位移（μm，保留静态偏移）。默认展示丢弃初始段后的 0.25 秒。
 - natural_frequencies.png：按频率排序的 27 阶未阻尼固有频率。
 
+每张图同时导出中文宋体和英文 Times New Roman 两版。上述文件名对应中文版，英文版在 `.png` 前加 `_en`（例如 `tool_response_en.png`）。MATLAB 桌面显示中文版。
+
 result.holderAcceleration 是刀杆等效质量点的加速度，可用于比较刀杆传感器测点；它与 result.tipAcceleration 不同。实际传感器方向、安装位置、传感器及安装件质量应在标定时考虑。
 
 三向力联合输入时，在同一频率下应进行复数响应相加后再取模，不能直接相加各幅值。

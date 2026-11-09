@@ -162,19 +162,20 @@ writetable(table((1:nd)',fn,'VariableNames',{'mode','frequency_Hz'}), ...
 
 short = t >= p.discard & t <= p.discard+0.25;
 directionTitles = {'径向','轴向','切向'};
-titleStyle = {'FontName','宋体','FontWeight','normal'};
 fig = figure('Name','刀尖加速度','NumberTitle','off', ...
     'Visible','off','Color','w','Position',[50 50 1100 850]);
 for j = 1:3
     subplot(3,2,2*j-1);
     plot(t(short),tipA(j,short),'LineWidth',0.7); grid on;
-    xlabel('Time (s)'); ylabel('Acceleration (m/s^2)');
-    title([directionTitles{j} '刀尖加速度时程'],titleStyle{:});
+    setappdata(gca,'PlotLabels', ...
+        {[directionTitles{j} '刀尖加速度时程'], '时间 (s)', '加速度 (m/s^2)'; ...
+         [axesNames{j} ' tool-tip acceleration'], 'Time (s)', 'Acceleration (m/s^2)'});
     subplot(3,2,2*j);
     plot(freqFFT,ampFFT(j,:),'LineWidth',0.7); grid on;
-    xlim([0 p.plotMaxHz]); xlabel('Frequency (Hz)');
-    ylabel('Single-sided amplitude (m/s^2)');
-    title([directionTitles{j} '刀尖加速度幅度谱'],titleStyle{:});
+    xlim([0 p.plotMaxHz]);
+    setappdata(gca,'PlotLabels', ...
+        {[directionTitles{j} '刀尖加速度幅度谱'], '频率 (Hz)', '单边幅值 (m/s^2)'; ...
+         [axesNames{j} ' acceleration spectrum'], 'Frequency (Hz)', 'Single-sided amplitude (m/s^2)'});
 end
 save_result_figure(fig,outdir,'acceleration.png',p.showFigures);
 
@@ -183,8 +184,9 @@ fig = figure('Name','单位力加速度频响','NumberTitle','off', ...
 for j = 1:3
     subplot(3,1,j);
     semilogy(freq,max(squeeze(abs(Htip(j,j,:))),1e-16)); grid on;
-    xlabel('Frequency (Hz)'); ylabel('(m/s^2)/N');
-    title([directionTitles{j} '单位力加速度频响'],titleStyle{:});
+    setappdata(gca,'PlotLabels', ...
+        {[directionTitles{j} '单位力加速度频响'], '频率 (Hz)', '加速度频响幅值 ((m/s^2)/N)'; ...
+         [axesNames{j} ' unit-force accelerance'], 'Frequency (Hz)', 'Accelerance magnitude ((m/s^2)/N)'});
 end
 save_result_figure(fig,outdir,'unit_force_frf.png',p.showFigures);
 
@@ -195,8 +197,9 @@ fig = figure('Name','三向切削力','NumberTitle','off', ...
 for j = 1:3
     subplot(3,1,j);
     plot(t(forceWindow),force(j,forceWindow),'LineWidth',0.7); grid on;
-    xlabel('Time (s)'); ylabel('Force (N)');
-    title([directionTitles{j} '切削力时程'],titleStyle{:});
+    setappdata(gca,'PlotLabels', ...
+        {[directionTitles{j} '切削力时程'], '时间 (s)', '切削力 (N)'; ...
+         [axesNames{j} ' cutting force'], 'Time (s)', 'Cutting force (N)'});
 end
 save_result_figure(fig,outdir,'cutting_force.png',p.showFigures);
 
@@ -205,15 +208,18 @@ fig = figure('Name','刀具与轮对响应','NumberTitle','off', ...
 for j = 1:3
     subplot(3,2,2*j-1);
     plot(t(short),tipA(j,short),t(short),holderA(j,short),'LineWidth',0.7); grid on;
-    xlabel('Time (s)'); ylabel('Acceleration (m/s^2)');
-    title([directionTitles{j} '刀尖与刀杆加速度对比'],titleStyle{:});
+    setappdata(gca,'PlotLabels', ...
+        {[directionTitles{j} '刀尖与刀杆加速度对比'], '时间 (s)', '加速度 (m/s^2)'; ...
+         [axesNames{j} ' tool-tip and holder acceleration'], 'Time (s)', 'Acceleration (m/s^2)'});
     if j == 1
-        legend('Tool tip','Tool holder','Location','best');
+        lg = legend('刀尖','刀杆','Location','best');
+        setappdata(lg,'PlotLabels',{'刀尖','刀杆'; 'Tool tip','Tool holder'});
     end
     subplot(3,2,2*j);
     plot(t(short),1e6*relativeU(j,short),'LineWidth',0.7); grid on;
-    xlabel('Time (s)'); ylabel('Relative displacement ({\mu}m)');
-    title([directionTitles{j} '刀尖相对轮对的位移'],titleStyle{:});
+    setappdata(gca,'PlotLabels', ...
+        {[directionTitles{j} '刀尖相对轮对的位移'], '时间 (s)', '相对位移 ({\mu}m)'; ...
+         [axesNames{j} ' displacement: tip minus wheelset'], 'Time (s)', 'Relative displacement ({\mu}m)'});
 end
 save_result_figure(fig,outdir,'tool_response.png',p.showFigures);
 
@@ -221,18 +227,37 @@ fig = figure('Name','未阻尼固有频率','NumberTitle','off', ...
     'Visible','off','Color','w','Position',[50 50 950 500]);
 stem(1:nd,fn,'filled'); grid on;
 xlim([0.5 nd+0.5]); xticks(1:nd);
-xlabel('Mode index'); ylabel('Natural frequency (Hz)');
-title('未阻尼固有频率',titleStyle{:});
+setappdata(gca,'PlotLabels', ...
+    {'未阻尼固有频率', '模态阶次', '固有频率 (Hz)'; ...
+     'Undamped natural frequencies', 'Mode index', 'Natural frequency (Hz)'});
 save_result_figure(fig,outdir,'natural_frequencies.png',p.showFigures);
 fprintf('Saved illustrative results to: %s\n',outdir);
 end
 
 function save_result_figure(fig,outdir,filename,showFigures)
+% Reuse the same plotted data. Leave desktop figures in Chinese.
+[~,stemName,ext] = fileparts(filename);
+apply_plot_language(fig,2,'Times New Roman');
+print(fig,fullfile(outdir,[stemName '_en' ext]),'-dpng','-r140');
+apply_plot_language(fig,1,'宋体');
 print(fig,fullfile(outdir,filename),'-dpng','-r140');
 if showFigures
     set(fig,'Visible','on');
 else
     close(fig);
+end
+end
+
+function apply_plot_language(fig,language,fontName)
+for ax = reshape(findall(fig,'Type','axes'),1,[])
+    labels = getappdata(ax,'PlotLabels');
+    ax.FontName = fontName;
+    set([ax.Title; ax.XLabel; ax.YLabel],{'String'},labels(language,:).', ...
+        'FontName',fontName,'FontWeight','normal');
+end
+for lg = reshape(findall(fig,'Type','legend'),1,[])
+    labels = getappdata(lg,'PlotLabels');
+    set(lg,'String',labels(language,:),'FontName',fontName);
 end
 end
 
